@@ -99,7 +99,7 @@ def detectEvents(video_path, output_path):
                           dropout=False)
 
     try:
-        save_dict = torch.load('../GolfDB/models/swingnet_1800.pth.tar', map_location=torch.device('cpu'))
+        save_dict = torch.load('models/swingnet_1800.pth.tar', map_location=torch.device('cpu'))
 
     except:
         print("Model weights not found. Download model weights and place in 'models' folder. See README for instructions")
@@ -148,14 +148,11 @@ def detectEvents(video_path, output_path):
         outpath = os.path.join(output_path, filename)
         # print(outpath)
         cv2.imshow(event_names[i], img)
-        # cv2.imwrite(outpath, img)
+        cv2.imwrite(outpath, img)
         cv2.waitKey(0)
         cv2.destroyAllWindows()
-
+#
 if __name__ == "__main__":
     input = 'test_video.mp4'
-    if os.path.isfile(input):
-        print("File exists")
-        detectEvents(input, 'detections/Tommy-Fleetwood_LongIrons_Front1')
-    else:
-        print('File not found')
+
+    detectEvents(input, 'detections/Tommy-Fleetwood_LongIrons_Front1')
