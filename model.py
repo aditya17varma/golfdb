@@ -1,6 +1,5 @@
 import torch
 import torch.nn as nn
-from torch.autograd import Variable
 try:
     # Works when run as a package: python -m GolfDB.test_video
     from GolfDB.MobileNetV2 import MobileNetV2
@@ -21,8 +20,8 @@ class EventDetector(nn.Module):
         net = MobileNetV2(width_mult=width_mult)
         state_dict_mobilenet = torch.load('mobilenet_v2.pth.tar')
         # state_dict_mobilenet = torch.load('fpn_inception.h5',  map_location=torch.device('cpu'))
-        state_dict_mobilenet['classifier.1.weight'] = state_dict_mobilenet.pop('classifier.weight')
-        state_dict_mobilenet['classifier.1.bias'] = state_dict_mobilenet.pop('classifier.bias')
+        # state_dict_mobilenet['classifier.1.weight'] = state_dict_mobilenet.pop('classifier.weight')
+        # state_dict_mobilenet['classifier.1.bias'] = state_dict_mobilenet.pop('classifier.bias')
         if pretrain:
             net.load_state_dict(state_dict_mobilenet)
 
@@ -37,22 +36,16 @@ class EventDetector(nn.Module):
         if self.dropout:
             self.drop = nn.Dropout(0.5)
 
-    def init_hidden(self, batch_size):
-        if self.bidirectional:
-            # return (Variable(torch.zeros(2*self.lstm_layers, batch_size, self.lstm_hidden).cuda(), requires_grad=True),
-            #         Variable(torch.zeros(2*self.lstm_layers, batch_size, self.lstm_hidden).cuda(), requires_grad=True))
-            return (
-            Variable(torch.zeros(2 * self.lstm_layers, batch_size, self.lstm_hidden).to('cpu'), requires_grad=True),
-            Variable(torch.zeros(2 * self.lstm_layers, batch_size, self.lstm_hidden).to('cpu'), requires_grad=True))
-        else:
-            # return (Variable(torch.zeros(self.lstm_layers, batch_size, self.lstm_hidden).cuda(), requires_grad=True),
-            #         Variable(torch.zeros(self.lstm_layers, batch_size, self.lstm_hidden).cuda(), requires_grad=True))
-            return (Variable(torch.zeros(self.lstm_layers, batch_size, self.lstm_hidden).to('cpu'), requires_grad=True),
-                    Variable(torch.zeros(self.lstm_layers, batch_size, self.lstm_hidden).to('cpu'), requires_grad=True))
+    def init_hidden(self, batch_size, device):
+        num_directions = 2 if self.bidirectional else 1
+        shape = (num_directions * self.lstm_layers, batch_size, self.lstm_hidden)
+        h0 = torch.zeros(shape, device=device)
+        c0 = torch.zeros(shape, device=device)
+        return h0, c0
 
     def forward(self, x, lengths=None):
         batch_size, timesteps, C, H, W = x.size()
-        self.hidden = self.init_hidden(batch_size)
+        self.hidden = self.init_hidden(batch_size, x.device)
 
         # CNN forward
         c_in = x.view(batch_size * timesteps, C, H, W)
@@ -68,5 +61,4 @@ class EventDetector(nn.Module):
         out = out.view(batch_size*timesteps,9)
 
         return out
-
 

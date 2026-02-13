@@ -43,12 +43,69 @@ and place 'mobilenet_v2.pth.tar' in the root directory.
 
 * Run [train.py](train.py)
 
+#### Optimized training (speed + accuracy)
+`train.py` now includes:
+* Mixed precision training (AMP) and gradient scaling
+* cuDNN benchmark + high matmul precision on CUDA
+* DataLoader optimizations (`pin_memory`, `persistent_workers`, `prefetch_factor`)
+* OneCycleLR scheduler + gradient clipping
+* Periodic validation and automatic best-checkpoint saving (`models/swingnet_best.pth.tar`)
+
+Environment knobs (all optional):
+* `GOLFDB_NUM_WORKERS` (default: `6`)
+* `GOLFDB_USE_AMP` (default: `1`)
+* `GOLFDB_USE_COMPILE` (default: `0`)
+* `GOLFDB_PIN_MEMORY` (default: `1`)
+* `GOLFDB_PERSISTENT_WORKERS` (default: `1`)
+* `GOLFDB_PREFETCH_FACTOR` (default: `4`)
+* `GOLFDB_FREEZE_LAYERS` (default: `0`)
+* `GOLFDB_MAX_GRAD_NORM` (default: `1.0`)
+* `GOLFDB_LOG_EVERY` (default: `10`)
+* `GOLFDB_EVAL_INTERVAL` (default: `100`)
+* `GOLFDB_EVAL_NUM_WORKERS` (default: `min(max(num_workers, 1), 4)`)
+* `GOLFDB_EVAL_DISP` (default: `0`)
+* `GOLFDB_DATALOADER_TIMEOUT_S` (default: `60`, forced to `0` when `GOLFDB_NUM_WORKERS=0`)
+
+Sample commands:
+
+High-performance training on GPU:
+```bash
+GOLFDB_NUM_WORKERS=8 \
+GOLFDB_USE_AMP=1 \
+GOLFDB_USE_COMPILE=1 \
+GOLFDB_PIN_MEMORY=1 \
+GOLFDB_PERSISTENT_WORKERS=1 \
+GOLFDB_PREFETCH_FACTOR=4 \
+GOLFDB_FREEZE_LAYERS=0 \
+GOLFDB_EVAL_INTERVAL=100 \
+GOLFDB_EVAL_NUM_WORKERS=4 \
+GOLFDB_LOG_EVERY=20 \
+python train.py
+```
+
+Debug data loading / path issues:
+```bash
+GOLFDB_DEBUG_TRAIN=1 \
+GOLFDB_DEBUG_DATALOADER=1 \
+GOLFDB_NUM_WORKERS=0 \
+python train.py
+```
+
 ### Evaluate
 * Train your own model by following the steps above or download the pre-trained weights 
 [here](https://drive.google.com/file/d/1MBIDwHSM8OKRbxS8YfyRLnUBAdt0nupW/view?usp=sharing). Create a 'models' directory
 if not already created and place 'swingnet_1800.pth.tar' in this directory.
 
 * Run [eval.py](eval.py). If using the pre-trained weights provided, the PCE should be 0.715.  
+
+Evaluate the best checkpoint from training:
+```bash
+python eval.py
+```
+`eval.py` uses `models/swingnet_best.pth.tar` by default when present. Override with:
+```bash
+GOLFDB_EVAL_CKPT=models/swingnet_1800.pth.tar python eval.py
+```
 
 ### Test your own video
 * Follow steps above to download pre-trained weights. Then in the terminal: `python3 test_video.py -p test_video.mp4`
