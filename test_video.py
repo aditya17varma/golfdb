@@ -61,6 +61,8 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('-p', '--path', help='Path to video that you want to test', default='test_video.mp4')
     parser.add_argument('-s', '--seq-length', type=int, help='Number of frames to use per forward pass', default=64)
+    parser.add_argument('-d', '--device', type=str, default='cuda', choices=['cuda', 'cpu'],
+                        help='Device to run inference on (default: cuda)')
     args = parser.parse_args()
     seq_length = args.seq_length
 
@@ -79,13 +81,20 @@ if __name__ == '__main__':
                           bidirectional=True,
                           dropout=False)
 
-    try:
-        save_dict = torch.load('models/swingnet_1800.pth.tar')
-    except:
-        print("Model weights not found. Download model weights and place in 'models' folder. See README for instructions")
-
-    device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+    if args.device == 'cuda' and not torch.cuda.is_available():
+        print("CUDA was requested but is not available in this environment.")
+        raise SystemExit(1)
+    device = torch.device(args.device)
     print('Using device:', device)
+    try:
+        save_dict = torch.load('models/swingnet_1800.pth.tar', map_location=device)
+    except FileNotFoundError:
+        print("Model weights not found. Download model weights and place in 'models' folder. See README for instructions")
+        raise SystemExit(1)
+    except Exception as e:
+        print(f"Failed to load model weights from 'models/swingnet_1800.pth.tar': {e}")
+        raise SystemExit(1)
+
     model.load_state_dict(save_dict['model_state_dict'])
     model.to(device)
     model.eval()
@@ -101,7 +110,7 @@ if __name__ == '__main__':
                 image_batch = images[:, batch * seq_length:, :, :, :]
             else:
                 image_batch = images[:, batch * seq_length:(batch + 1) * seq_length, :, :, :]
-            logits = model(image_batch.cuda())
+            logits = model(image_batch.to(device))
             if batch == 0:
                 probs = F.softmax(logits.data, dim=1).cpu().numpy()
             else:
@@ -124,5 +133,3 @@ if __name__ == '__main__':
         cv2.imshow(event_names[i], img)
         cv2.waitKey(0)
         cv2.destroyAllWindows()
-
-

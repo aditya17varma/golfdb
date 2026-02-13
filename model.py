@@ -1,7 +1,12 @@
 import torch
 import torch.nn as nn
 from torch.autograd import Variable
-from MobileNetV2 import MobileNetV2
+try:
+    # Works when run as a package: python -m GolfDB.test_video
+    from GolfDB.MobileNetV2 import MobileNetV2
+except ModuleNotFoundError:
+    # Works when run as a script: python submodule/GolfDB/test_video.py
+    from MobileNetV2 import MobileNetV2
 
 
 class EventDetector(nn.Module):
@@ -63,6 +68,5 @@ class EventDetector(nn.Module):
         out = out.view(batch_size*timesteps,9)
 
         return out
-
 
 

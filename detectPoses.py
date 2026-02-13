@@ -3,7 +3,7 @@ import cv2
 import torch
 from torch.utils.data import Dataset, DataLoader
 from torchvision import transforms
-from model import EventDetector
+from GolfDB.model import EventDetector
 import numpy as np
 import torch.nn.functional as F
 import os
@@ -147,10 +147,10 @@ def detectEvents(video_path, output_path):
         filename = filename + '_' + event_names[i] + '.jpg'
         outpath = os.path.join(output_path, filename)
         # print(outpath)
-        cv2.imshow(event_names[i], img)
+        # cv2.imshow(event_names[i], img)
         cv2.imwrite(outpath, img)
-        cv2.waitKey(0)
-        cv2.destroyAllWindows()
+        # cv2.waitKey(0)
+        # cv2.destroyAllWindows()
 #
 if __name__ == "__main__":
     input = 'test_video.mp4'
