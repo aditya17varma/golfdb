@@ -52,6 +52,10 @@ and place 'mobilenet_v2.pth.tar' in the root directory.
 * Periodic validation and automatic best-checkpoint saving (`models/swingnet_best.pth.tar`)
 
 Environment knobs (all optional):
+* `GOLFDB_ITERATIONS` (default: `2000` optimizer steps)
+* `GOLFDB_SAVE_INTERVAL` (default: `100`)
+* `GOLFDB_SEQ_LENGTH` (default: `64`)
+* `GOLFDB_BATCH_SIZE` (default: `22`)
 * `GOLFDB_NUM_WORKERS` (default: `6`)
 * `GOLFDB_USE_AMP` (default: `1`)
 * `GOLFDB_USE_COMPILE` (default: `0`)
@@ -59,6 +63,20 @@ Environment knobs (all optional):
 * `GOLFDB_PERSISTENT_WORKERS` (default: `1`)
 * `GOLFDB_PREFETCH_FACTOR` (default: `4`)
 * `GOLFDB_FREEZE_LAYERS` (default: `0`)
+* `GOLFDB_LR` (default: `0.001`)
+* `GOLFDB_ONECYCLE_PCT_START` (default: `0.1`)
+* `GOLFDB_GRAD_ACCUM_STEPS` (default: `1`)
+* `GOLFDB_LOSS` (default: `ce`, options: `ce`, `focal`)
+* `GOLFDB_FOCAL_GAMMA` (default: `2.0`)
+* `GOLFDB_LABEL_SMOOTHING` (default: `0.0`, CE only)
+* `GOLFDB_USE_AUGMENT` (default: `1`)
+* `GOLFDB_AUG_FLIP_P` (default: `0.5`)
+* `GOLFDB_AUG_ROTATE` (default: `8.0`)
+* `GOLFDB_AUG_TRANSLATE` (default: `0.05`)
+* `GOLFDB_AUG_SCALE_MIN` (default: `0.95`)
+* `GOLFDB_AUG_SCALE_MAX` (default: `1.05`)
+* `GOLFDB_AUG_BRIGHTNESS` (default: `0.12`)
+* `GOLFDB_AUG_CONTRAST` (default: `0.12`)
 * `GOLFDB_MAX_GRAD_NORM` (default: `1.0`)
 * `GOLFDB_LOG_EVERY` (default: `10`)
 * `GOLFDB_EVAL_INTERVAL` (default: `100`)
@@ -77,9 +95,28 @@ GOLFDB_PIN_MEMORY=1 \
 GOLFDB_PERSISTENT_WORKERS=1 \
 GOLFDB_PREFETCH_FACTOR=4 \
 GOLFDB_FREEZE_LAYERS=0 \
+GOLFDB_LR=0.001 \
 GOLFDB_EVAL_INTERVAL=100 \
 GOLFDB_EVAL_NUM_WORKERS=4 \
 GOLFDB_LOG_EVERY=20 \
+python train.py
+```
+
+Accuracy-first preset (stronger regularization + longer schedule):
+```bash
+GOLFDB_ITERATIONS=6000 \
+GOLFDB_SEQ_LENGTH=96 \
+GOLFDB_BATCH_SIZE=12 \
+GOLFDB_GRAD_ACCUM_STEPS=2 \
+GOLFDB_NUM_WORKERS=8 \
+GOLFDB_USE_AUGMENT=1 \
+GOLFDB_LOSS=focal \
+GOLFDB_FOCAL_GAMMA=2.0 \
+GOLFDB_LR=0.0008 \
+GOLFDB_USE_AMP=1 \
+GOLFDB_USE_COMPILE=1 \
+GOLFDB_EVAL_INTERVAL=200 \
+GOLFDB_EVAL_NUM_WORKERS=4 \
 python train.py
 ```
 
@@ -90,6 +127,39 @@ GOLFDB_DEBUG_DATALOADER=1 \
 GOLFDB_NUM_WORKERS=0 \
 python train.py
 ```
+
+#### Optimization rationale (interview notes)
+The project optimizations were grouped into three buckets: throughput, generalization, and training stability.
+
+Throughput (faster training):
+* AMP (`torch.amp.autocast` + `GradScaler`) reduces GPU memory and improves tensor-core utilization.
+* `torch.compile` can fuse graph segments and reduce Python overhead.
+* Data pipeline tuning (`num_workers`, `pin_memory`, `persistent_workers`, `prefetch_factor`) keeps GPU fed.
+* Reduced logging frequency lowers host-side synchronization overhead.
+
+Generalization (better validation PCE):
+* Sequence-consistent augmentation (`RandomAugment`) applies one geometric/photometric transform to all frames in a clip, preserving temporal coherence.
+* Configurable objective (`ce` or `focal`) handles class imbalance and hard-example emphasis.
+* Optional label smoothing for CE improves calibration and reduces over-confidence.
+* Longer schedules + best-checkpoint-by-PCE selection avoid relying on final-step weights.
+
+Training stability (fewer bad runs):
+* OneCycleLR provides warmup + annealing behavior with strong empirical convergence.
+* Gradient clipping prevents unstable updates in the CNN+LSTM stack.
+* Gradient accumulation enables larger effective batch size without exceeding VRAM.
+* Explicit PyTorch 2.6 checkpoint loading (`weights_only=False`) avoids serialization regressions.
+
+Tradeoffs to mention:
+* More augmentation usually improves robustness, but too much can distort event timing cues.
+* Focal loss can improve minority-event learning, but may underperform CE on well-balanced subsets.
+* `torch.compile` improves speed on many setups, but can increase startup/compile time.
+* Higher `seq_length` adds temporal context but increases memory and runtime per step.
+
+Common tuning order:
+1. Stabilize pipeline (`num_workers`, AMP, eval interval, best-checkpoint logic).
+2. Tune optimization (`LR`, OneCycle shape, accumulation, clipping).
+3. Tune objective (`ce` + smoothing vs `focal`).
+4. Tune augmentation strength and sequence length.
 
 ### Evaluate
 * Train your own model by following the steps above or download the pre-trained weights 
@@ -113,5 +183,18 @@ GOLFDB_EVAL_CKPT=models/swingnet_1800.pth.tar python eval.py
 * **Note:** This code requires the sample video to be cropped and cut to bound a single golf swing. 
 I used online video [cropping](https://ezgif.com/crop-video) and [cutting](https://online-video-cutter.com/) 
 tools for my golf swing video. See test_video.mp4 for reference.
+
+### iOS / CoreML deployment notes
+If you convert models for iOS using `Scripts/convert_model.py`:
+* The converter now prefers `models/swingnet_best.pth.tar` automatically.
+* You can override checkpoint path with:
+```bash
+GOLFDB_CONVERT_CKPT=/absolute/path/to/checkpoint.pth.tar python ../../Scripts/convert_model.py
+```
+* Conversion loading is compatible with PyTorch 2.6+ checkpoint defaults.
+
+For on-device inference, preprocessing must exactly match training:
+* Mean: `[0.485, 0.456, 0.406]`
+* Std:  `[0.229, 0.224, 0.225]`
 
 Good luck!
